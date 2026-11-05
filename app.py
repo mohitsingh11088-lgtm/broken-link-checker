@@ -483,6 +483,7 @@ def bulk_check_urls(url_list, max_workers=MAX_WORKERS):
 # ==========================================
 
 
+
 def display_results(df, filename):
 
     if df.empty:
@@ -490,40 +491,52 @@ def display_results(df, filename):
         return
 
     total = len(df)
-    # Show the actual HTTP response distribution
-st.subheader("HTTP Status Code Distribution")
 
-status_counts = (
-    df["Status Code"]
-    .fillna("Missing Status")
-    .astype(str)
-    .value_counts()
-)
+    # ======================================
+    # HTTP STATUS CODE DISTRIBUTION
+    # ======================================
 
-st.dataframe(
-    status_counts.rename_axis("Status Code")
-    .reset_index(name="URL Count"),
-    use_container_width=True
-)
+    st.subheader("HTTP Status Code Distribution")
+
+    status_counts = (
+        df["Status Code"]
+        .fillna("Missing Status")
+        .astype(str)
+        .value_counts()
+    )
+
+    st.dataframe(
+        status_counts.rename_axis("Status Code")
+        .reset_index(name="URL Count"),
+        use_container_width=True
+    )
+
+    # ======================================
+    # CLASSIFY URL RESULTS
+    # ======================================
 
     status = df["Status Code"].astype(str)
 
-    # Genuine broken links
     broken_404 = df[status == "404"]
     broken_410 = df[status == "410"]
 
-    # Working URLs
-    working = df[df["Analysis"] == "Working"]
-
-    # Redirects
-    redirects = df[df["Analysis"] == "Redirect"]
-
-    # Other issues
-    other_issues = df[
-        ~df["Analysis"].isin(["Working", "Redirect"])
+    working = df[
+        df["Analysis"].isin(["Working"])
     ]
 
-    # Metrics
+    redirects = df[
+        df["Analysis"] == "Redirect"
+    ]
+
+    other_issues = df[
+        ~df["Analysis"].isin(["Working", "Redirect"])
+        & ~df["Status Code"].astype(str).isin(["404", "410"])
+    ]
+
+    # ======================================
+    # METRICS
+    # ======================================
+
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total URLs", total)
@@ -538,7 +551,10 @@ st.dataframe(
 
     st.divider()
 
+    # ======================================
     # 404 REPORT
+    # ======================================
+
     with st.expander("🚨 Genuine 404 Broken Links", expanded=True):
 
         if not broken_404.empty:
@@ -549,7 +565,10 @@ st.dataframe(
         else:
             st.success("No 404 errors detected.")
 
+    # ======================================
     # 410 REPORT
+    # ======================================
+
     with st.expander("🗑️ Permanently Removed URLs (410)"):
 
         if not broken_410.empty:
@@ -560,7 +579,10 @@ st.dataframe(
         else:
             st.info("No 410 errors detected.")
 
-    # OTHER ISSUES
+    # ======================================
+    # OTHER TECHNICAL ISSUES
+    # ======================================
+
     with st.expander("⚠️ Other HTTP Errors and Technical Issues"):
 
         if not other_issues.empty:
@@ -568,8 +590,13 @@ st.dataframe(
                 other_issues,
                 use_container_width=True
             )
+        else:
+            st.success("No other technical issues detected.")
 
+    # ======================================
     # REDIRECT REPORT
+    # ======================================
+
     with st.expander("🔄 Redirected URLs"):
 
         if not redirects.empty:
@@ -577,8 +604,13 @@ st.dataframe(
                 redirects,
                 use_container_width=True
             )
+        else:
+            st.info("No redirects detected.")
 
+    # ======================================
     # COMPLETE REPORT
+    # ======================================
+
     with st.expander("📋 Complete URL Audit"):
 
         st.dataframe(
@@ -586,7 +618,10 @@ st.dataframe(
             use_container_width=True
         )
 
+    # ======================================
     # DOWNLOAD COMPLETE CSV
+    # ======================================
+
     csv_data = df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
@@ -597,7 +632,10 @@ st.dataframe(
         key=f"download_{filename}"
     )
 
-    # DOWNLOAD ONLY 404 LINKS
+    # ======================================
+    # DOWNLOAD 404 ONLY
+    # ======================================
+
     if not broken_404.empty:
 
         csv_404 = broken_404.to_csv(
@@ -609,8 +647,9 @@ st.dataframe(
             data=csv_404,
             file_name="404_broken_links.csv",
             mime="text/csv",
-            key="download_404"
+            key=f"download_404_{filename}"
         )
+
 
 
 # ==========================================
