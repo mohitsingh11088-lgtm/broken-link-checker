@@ -84,8 +84,9 @@ def is_valid_url(url):
 # ==========================================
 
 
+
 def verify_url(url, timeout=TIMEOUT):
-    """Check URL status using HEAD and GET fallback."""
+    """Check URL using GET to obtain a more reliable HTTP status."""
 
     url = str(url).strip()
 
@@ -97,46 +98,33 @@ def verify_url(url, timeout=TIMEOUT):
         }
 
     try:
-        # First attempt: HEAD request
-        response = requests.head(
+        response = requests.get(
             url,
             headers=HEADERS,
             timeout=timeout,
-            allow_redirects=True
+            allow_redirects=True,
+            stream=True
         )
-
-        # Retry with GET if HEAD is blocked or unsupported
-        if response.status_code in [403, 405, 501]:
-            response.close()
-
-            response = requests.get(
-                url,
-                headers=HEADERS,
-                timeout=timeout,
-                allow_redirects=True,
-                stream=True
-            )
 
         status = response.status_code
         final_url = response.url
 
         response.close()
 
-        # Analyze HTTP status
-        if 200 <= status < 300:
+        if status == 404:
+            analysis = "Broken Link - 404 Not Found"
+
+        elif status == 410:
+            analysis = "Broken Link - 410 Gone"
+
+        elif 200 <= status < 300:
             analysis = "Working"
 
         elif 300 <= status < 400:
             analysis = "Redirect"
 
-        elif status == 404:
-            analysis = "Not Found"
-
-        elif status == 410:
-            analysis = "Permanently Removed"
-
         elif status == 403:
-            analysis = "Forbidden"
+            analysis = "Blocked - 403 Forbidden"
 
         elif status == 401:
             analysis = "Unauthorized"
@@ -148,7 +136,7 @@ def verify_url(url, timeout=TIMEOUT):
             analysis = "Server Error"
 
         else:
-            analysis = "Issue Found"
+            analysis = "Other HTTP Issue"
 
         return {
             "Status Code": status,
@@ -177,12 +165,13 @@ def verify_url(url, timeout=TIMEOUT):
             "Final URL": url
         }
 
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
         return {
             "Status Code": "Request Error",
-            "Analysis": "Request Failed",
+            "Analysis": str(e),
             "Final URL": url
         }
+
 
 # ==========================================
 # EXTRACT INTERNAL LINKS (HOMEPAGE CRAWL)
@@ -489,41 +478,121 @@ def bulk_check_urls(url_list, max_workers=MAX_WORKERS):
 # RESULTS DISPLAY METRICS
 # ==========================================
 
+
 def display_results(df, filename):
+
     if df.empty:
         st.warning("No results available.")
         return
 
     total = len(df)
-    working_mask = df["Analysis"].isin(["Working", "Redirect"])
-    working = working_mask.sum()
-    broken = total - working
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🔍 Total Unique Links Checked", total)
-    col2.metric("✅ Clean / Active Links", working)
-    col3.metric("🚨 Broken / Actionable Issues", broken, delta=int(broken), delta_color="inverse")
+    status = df["Status Code"].astype(str)
 
-    st.write("---")
-    
-    with st.expander("🚨 View Broken Links & Server Failures Only", expanded=True):
-        broken_df = df[~working_mask]
-        if not broken_df.empty:
-            st.dataframe(broken_df, use_container_width=True)
+    # Genuine broken links
+    broken_404 = df[status == "404"]
+    broken_410 = df[status == "410"]
+
+    # Working URLs
+    working = df[df["Analysis"] == "Working"]
+
+    # Redirects
+    redirects = df[df["Analysis"] == "Redirect"]
+
+    # Other issues
+    other_issues = df[
+        ~df["Analysis"].isin(["Working", "Redirect"])
+    ]
+
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Total URLs", total)
+    col2.metric("Working URLs", len(working))
+    col3.metric("404 Broken Links", len(broken_404))
+    col4.metric("410 Removed URLs", len(broken_410))
+
+    col5, col6 = st.columns(2)
+
+    col5.metric("Redirects", len(redirects))
+    col6.metric("Other Technical Issues", len(other_issues))
+
+    st.divider()
+
+    # 404 REPORT
+    with st.expander("🚨 Genuine 404 Broken Links", expanded=True):
+
+        if not broken_404.empty:
+            st.dataframe(
+                broken_404,
+                use_container_width=True
+            )
         else:
-            st.success("🎉 Excellent! Zero broken links discovered on this workspace layout.")
+            st.success("No 404 errors detected.")
 
-    with st.expander("📋 View Complete Audit Dataset Report"):
-        st.dataframe(df, use_container_width=True)
+    # 410 REPORT
+    with st.expander("🗑️ Permanently Removed URLs (410)"):
 
-    csv_data = df.to_csv(index=False).encode('utf-8')
+        if not broken_410.empty:
+            st.dataframe(
+                broken_410,
+                use_container_width=True
+            )
+        else:
+            st.info("No 410 errors detected.")
+
+    # OTHER ISSUES
+    with st.expander("⚠️ Other HTTP Errors and Technical Issues"):
+
+        if not other_issues.empty:
+            st.dataframe(
+                other_issues,
+                use_container_width=True
+            )
+
+    # REDIRECT REPORT
+    with st.expander("🔄 Redirected URLs"):
+
+        if not redirects.empty:
+            st.dataframe(
+                redirects,
+                use_container_width=True
+            )
+
+    # COMPLETE REPORT
+    with st.expander("📋 Complete URL Audit"):
+
+        st.dataframe(
+            df,
+            use_container_width=True
+        )
+
+    # DOWNLOAD COMPLETE CSV
+    csv_data = df.to_csv(index=False).encode("utf-8")
+
     st.download_button(
-        label="📥 Download Complete Audit Report (CSV)",
+        label="📥 Download Complete SEO Audit CSV",
         data=csv_data,
         file_name=filename,
         mime="text/csv",
-        key=f"dl_{filename}"
+        key=f"download_{filename}"
     )
+
+    # DOWNLOAD ONLY 404 LINKS
+    if not broken_404.empty:
+
+        csv_404 = broken_404.to_csv(
+            index=False
+        ).encode("utf-8")
+
+        st.download_button(
+            label="📥 Download Only 404 Broken Links",
+            data=csv_404,
+            file_name="404_broken_links.csv",
+            mime="text/csv",
+            key="download_404"
+        )
+
 
 # ==========================================
 # MAIN INTERFACE ROUTER
