@@ -83,8 +83,10 @@ def is_valid_url(url):
 # VERIFY SINGLE URL STATUS
 # ==========================================
 
+
 def verify_url(url, timeout=TIMEOUT):
     """Check URL status using HEAD and GET fallback."""
+
     url = str(url).strip()
 
     if not is_valid_url(url):
@@ -95,7 +97,7 @@ def verify_url(url, timeout=TIMEOUT):
         }
 
     try:
-        # First attempt: HEAD request for performance
+        # First attempt: HEAD request
         response = requests.head(
             url,
             headers=HEADERS,
@@ -103,8 +105,10 @@ def verify_url(url, timeout=TIMEOUT):
             allow_redirects=True
         )
 
-        # Retry with GET when HEAD is unsupported or blocked.
-        if response.status_code in:
+        # Retry with GET if HEAD is blocked or unsupported
+        if response.status_code in [403, 405, 501]:
+            response.close()
+
             response = requests.get(
                 url,
                 headers=HEADERS,
@@ -115,22 +119,34 @@ def verify_url(url, timeout=TIMEOUT):
 
         status = response.status_code
         final_url = response.url
+
         response.close()
 
+        # Analyze HTTP status
         if 200 <= status < 300:
             analysis = "Working"
+
         elif 300 <= status < 400:
             analysis = "Redirect"
+
         elif status == 404:
             analysis = "Not Found"
+
         elif status == 410:
             analysis = "Permanently Removed"
+
         elif status == 403:
             analysis = "Forbidden"
+
         elif status == 401:
             analysis = "Unauthorized"
+
+        elif status == 429:
+            analysis = "Rate Limited"
+
         elif status >= 500:
             analysis = "Server Error"
+
         else:
             analysis = "Issue Found"
 
@@ -141,13 +157,33 @@ def verify_url(url, timeout=TIMEOUT):
         }
 
     except requests.exceptions.Timeout:
-        return {"Status Code": "Timeout", "Analysis": "Connection Timeout", "Final URL": url}
+        return {
+            "Status Code": "Timeout",
+            "Analysis": "Connection Timeout",
+            "Final URL": url
+        }
+
     except requests.exceptions.SSLError:
-        return {"Status Code": "SSL Error", "Analysis": "SSL Certificate Error", "Final URL": url}
+        return {
+            "Status Code": "SSL Error",
+            "Analysis": "SSL Certificate Error",
+            "Final URL": url
+        }
+
     except requests.exceptions.ConnectionError:
-        return {"Status Code": "Connection Error", "Analysis": "Unable to Connect", "Final URL": url}
+        return {
+            "Status Code": "Connection Error",
+            "Analysis": "Unable to Connect",
+            "Final URL": url
+        }
+
     except requests.exceptions.RequestException:
-        return {"Status Code": "Request Error", "Analysis": "Request Failed", "Final URL": url}
+        return {
+            "Status Code": "Request Error",
+            "Analysis": "Request Failed",
+            "Final URL": url
+        }
+
 # ==========================================
 # EXTRACT INTERNAL LINKS (HOMEPAGE CRAWL)
 # ==========================================
