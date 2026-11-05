@@ -4,7 +4,6 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import concurrent.futures
-import time
 
 # Set up page configurations
 st.set_page_config(
@@ -26,7 +25,7 @@ def verify_url(url, timeout=5):
     try:
         # Use HEAD request first for speed, fall back to GET if HEAD fails/blocked
         response = requests.head(url, headers=headers, timeout=timeout, allow_redirects=True)
-        if response.status_code in [404, 405, 500, 502, 503, 504]:
+        if response.status_code in:
             response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         return response.status_code, "OK" if response.status_code == 200 else "Issue Found"
     except requests.exceptions.Timeout:
@@ -69,6 +68,9 @@ def bulk_check_urls(url_list, max_workers=10):
     progress_bar = st.progress(0)
     status_text = st.empty()
     total = len(url_list)
+
+    if total == 0:
+        return pd.DataFrame(columns=["URL", "Status Code", "Analysis"])
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Map out the futures
@@ -129,7 +131,8 @@ with tab1:
 # TAB 2: Bulk File Upload
 with tab2:
     st.subheader("Upload Custom Extraction List")
-    uploaded_file = st.file_uploaded_file("Upload a .txt or .csv file (one URL per line)", type=["txt", "csv"])
+    # FIX: Changed st.file_uploaded_file to st.file_uploader
+    uploaded_file = st.file_uploader("Upload a .txt or .csv file (one URL per line)", type=["txt", "csv"])
     
     if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'):
