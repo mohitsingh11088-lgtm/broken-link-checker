@@ -85,15 +85,16 @@ def is_valid_url(url):
 
 
 
+
 def verify_url(url, timeout=TIMEOUT):
-    """Check URL using GET to obtain a more reliable HTTP status."""
+    """Verify URL and classify HTTP responses accurately."""
 
     url = str(url).strip()
 
     if not is_valid_url(url):
         return {
-            "Status Code": "Invalid URL",
-            "Analysis": "Invalid or unsafe URL",
+            "Status Code": "Invalid",
+            "Analysis": "Invalid URL",
             "Final URL": url
         }
 
@@ -111,23 +112,26 @@ def verify_url(url, timeout=TIMEOUT):
 
         response.close()
 
-        if status == 404:
-            analysis = "Broken Link - 404 Not Found"
+        if status is None:
+            analysis = "Unknown HTTP Response"
 
-        elif status == 410:
-            analysis = "Broken Link - 410 Gone"
+        elif status == 200:
+            analysis = "Working"
 
         elif 200 <= status < 300:
             analysis = "Working"
+
+        elif status == 404:
+            analysis = "Broken Link - 404"
+
+        elif status == 410:
+            analysis = "Broken Link - 410"
 
         elif 300 <= status < 400:
             analysis = "Redirect"
 
         elif status == 403:
-            analysis = "Blocked - 403 Forbidden"
-
-        elif status == 401:
-            analysis = "Unauthorized"
+            analysis = "Blocked - 403"
 
         elif status == 429:
             analysis = "Rate Limited"
@@ -154,14 +158,14 @@ def verify_url(url, timeout=TIMEOUT):
     except requests.exceptions.SSLError:
         return {
             "Status Code": "SSL Error",
-            "Analysis": "SSL Certificate Error",
+            "Analysis": "SSL Error",
             "Final URL": url
         }
 
     except requests.exceptions.ConnectionError:
         return {
             "Status Code": "Connection Error",
-            "Analysis": "Unable to Connect",
+            "Analysis": "Connection Failed",
             "Final URL": url
         }
 
@@ -486,6 +490,21 @@ def display_results(df, filename):
         return
 
     total = len(df)
+    # Show the actual HTTP response distribution
+st.subheader("HTTP Status Code Distribution")
+
+status_counts = (
+    df["Status Code"]
+    .fillna("Missing Status")
+    .astype(str)
+    .value_counts()
+)
+
+st.dataframe(
+    status_counts.rename_axis("Status Code")
+    .reset_index(name="URL Count"),
+    use_container_width=True
+)
 
     status = df["Status Code"].astype(str)
 
