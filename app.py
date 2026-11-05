@@ -245,84 +245,91 @@ def get_internal_links(base_url):
 # XML SITEMAP CRAWLER ENGINE
 # ==========================================
 
-def get_sitemap_urls(sitemap_url):
-    """Fetches a standard XML sitemap or Sitemap Index and extracts all URLs."""
+
+def get_sitemap_urls(sitemap_url, visited=None):
+    """Fetch XML sitemap or sitemap index and extract URLs."""
+
+    if visited is None:
+        visited = set()
+
+    if sitemap_url in visited:
+        return []
+
+    if len(visited) >= 100:
+        return []
+
+    visited.add(sitemap_url)
+
     if not is_valid_url(sitemap_url):
-        st.error("Invalid or unsafe Sitemap URL.")
         return []
-        
+
     try:
-        response = requests.get(sitemap_url, headers=HEADERS, timeout=TIMEOUT)
+        response = requests.get(
+            sitemap_url,
+            headers=HEADERS,
+            timeout=TIMEOUT,
+            allow_redirects=True
+        )
+
         response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, "xml")
-        sitemaps = soup.find_all("sitemap")
+
+        # Use Python's built-in XML parser
+        root = ET.fromstring(response.content)
+
         urls = []
-        
-        if sitemaps:
-            for sm in sitemaps:
-                loc = sm.find("loc")
-                if loc:
-                    urls.extend(get_sitemap_urls(loc.text.strip()))
-            return list(set(urls))
-            
-        loc_tags = soup.find_all("loc")
-        for loc in loc_tags:
-            if loc.parent.name == "url" or loc.parent.name == "urlset":
-                urls.append(loc.text.strip())
-            elif loc.parent.name not in ["sitemap", "sitemapindex"]:
-                urls.append(loc.text.strip())
-                
+
+        # Handle XML namespaces automatically
+        for element in root:
+
+            tag = element.tag.split("}")[-1].lower()
+
+            if tag == "sitemap":
+                # Sitemap index
+                for child in element:
+
+                    if child.tag.split("}")[-1].lower() == "loc":
+
+                        nested_sitemap = child.text.strip()
+
+                        urls.extend(
+                            get_sitemap_urls(
+                                nested_sitemap,
+                                visited
+                            )
+                        )
+
+            elif tag == "url":
+                # Standard URL sitemap
+                for child in element:
+
+                    if child.tag.split("}")[-1].lower() == "loc":
+
+                        page_url = child.text.strip()
+
+                        if is_valid_url(page_url):
+                            urls.append(page_url)
+
+        response.close()
+
         return list(set(urls))
-        
-    except Exception as e:
-        st.error(f"Error parsing sitemap ({sitemap_url}): {e}")
+
+    except ET.ParseError as e:
+        st.warning(
+            f"Invalid XML sitemap ({sitemap_url}): {e}"
+        )
         return []
 
-# ==========================================
-# BULK URL CHECKER ENGINE
-# ==========================================
+    except requests.exceptions.RequestException as e:
+        st.warning(
+            f"Could not access sitemap ({sitemap_url}): {e}"
+        )
+        return []
 
-def bulk_check_urls(url_list, max_workers=MAX_WORKERS):
-    url_list = list(dict.fromkeys(
-        str(url).strip()
-        for url in url_list
-        if str(url).strip()
-    ))
-
-    results = []
-    if not url_list:
-        return pd.DataFrame()
-
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    total = len(url_list)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_url = {
-            executor.submit(verify_url, url): url
-            for url in url_list
-        }
-
-        for index, future in enumerate(concurrent.futures.as_completed(future_to_url)):
-            url = future_to_url[future]
-            try:
-                result = future.result()
-            except Exception as e:
-                result = {
-                    "Status Code": "Unknown",
-                    "Analysis": str(e),
-                    "Final URL": url
-                }
-
-            results.append({"URL": url, **result})
-            progress = (index + 1) / total
-            progress_bar.progress(progress)
-            status_text.text(f"Processed {index + 1} of {total} URLs")
-
-    progress_bar.empty()
-    status_text.empty()
-    return pd.DataFrame(results)
+    except Exception as e:
+        st.warning(
+            f"Sitemap processing error ({sitemap_url}): {e}"
+        )
+        return []
 
 # ==========================================
 # RESULTS DISPLAY METRICS
