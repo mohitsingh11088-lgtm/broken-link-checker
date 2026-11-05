@@ -23,10 +23,13 @@ def verify_url(url, timeout=5):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SEO-Link-Checker"
     }
     try:
-        # Use HEAD request first for speed, fall back to GET if HEAD fails/blocked
+        # Use HEAD request first for speed
         response = requests.head(url, headers=headers, timeout=timeout, allow_redirects=True)
+        
+        # FIX: If HEAD request is blocked, rejected, or unhandled (e.g., 404/405/400), fall back to GET
         if response.status_code in:
             response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+            
         return response.status_code, "OK" if response.status_code == 200 else "Issue Found"
     except requests.exceptions.Timeout:
         return "Timeout", "Error"
@@ -125,13 +128,14 @@ with tab1:
                 # Export options
                 csv = df_results.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Download Results CSV", csv, "seo_link_report.csv", "text/csv")
+            else:
+                st.warning("No internal links were found on this page.")
         else:
             st.warning("Please provide a valid target URL.")
 
 # TAB 2: Bulk File Upload
 with tab2:
     st.subheader("Upload Custom Extraction List")
-    # FIX: Changed st.file_uploaded_file to st.file_uploader
     uploaded_file = st.file_uploader("Upload a .txt or .csv file (one URL per line)", type=["txt", "csv"])
     
     if uploaded_file is not None:
