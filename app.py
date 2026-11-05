@@ -332,6 +332,160 @@ def get_sitemap_urls(sitemap_url, visited=None):
         return []
 
 # ==========================================
+# EXTRACT ANCHOR TEXT FROM SITEMAP PAGES
+# ==========================================
+
+def get_page_links_for_report(page_url):
+
+    records = []
+
+    try:
+        if not is_valid_url(page_url):
+            return records
+
+        response = requests.get(
+            page_url,
+            headers=HEADERS,
+            timeout=TIMEOUT,
+            allow_redirects=True
+        )
+
+        response.raise_for_status()
+
+        source_page = response.url
+
+        soup = BeautifulSoup(
+            response.text,
+            "html.parser"
+        )
+
+        source_domain = urlparse(source_page).hostname
+
+        for a_tag in soup.find_all("a", href=True):
+
+            href = a_tag.get("href", "").strip()
+
+            if not href:
+                continue
+
+            destination = urljoin(source_page, href)
+            destination, _ = urldefrag(destination)
+
+            parsed = urlparse(destination)
+
+            if (
+                parsed.scheme not in ["http", "https"]
+                or not parsed.hostname
+                or parsed.hostname.lower() != source_domain.lower()
+            ):
+                continue
+
+            anchor_text = a_tag.get_text(
+                separator=" ",
+                strip=True
+            )
+
+            if not anchor_text:
+                image = a_tag.find("img")
+
+                if image:
+                    anchor_text = image.get("alt", "").strip()
+
+            if not anchor_text:
+                anchor_text = "[No Anchor Text]"
+
+            records.append({
+                "URL": destination,
+                "Anchor Text": anchor_text,
+                "Source Page": source_page
+            })
+
+        response.close()
+
+        return records
+
+    except requests.exceptions.RequestException:
+        return []
+
+    except Exception:
+        return []
+
+
+# ==========================================
+# BULK URL CHECKER ENGINE
+# ==========================================
+
+def bulk_check_urls(url_list, max_workers=MAX_WORKERS):
+
+    # Remove duplicate URLs
+    url_list = list(dict.fromkeys(
+        str(url).strip()
+        for url in url_list
+        if str(url).strip()
+    ))
+
+    results = []
+
+    if not url_list:
+        return pd.DataFrame(
+            columns=[
+                "URL",
+                "Status Code",
+                "Analysis",
+                "Final URL"
+            ]
+        )
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    total = len(url_list)
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+
+        future_to_url = {
+            executor.submit(verify_url, url): url
+            for url in url_list
+        }
+
+        for index, future in enumerate(
+            concurrent.futures.as_completed(future_to_url)
+        ):
+
+            url = future_to_url[future]
+
+            try:
+                result = future.result()
+
+            except Exception as e:
+                result = {
+                    "Status Code": "Unknown",
+                    "Analysis": str(e),
+                    "Final URL": url
+                }
+
+            results.append({
+                "URL": url,
+                **result
+            })
+
+            progress = (index + 1) / total
+
+            progress_bar.progress(progress)
+
+            status_text.text(
+                f"Processed {index + 1} of {total} URLs..."
+            )
+
+    progress_bar.empty()
+    status_text.empty()
+
+    return pd.DataFrame(results)
+
+
+# ==========================================
 # RESULTS DISPLAY METRICS
 # ==========================================
 
@@ -411,19 +565,78 @@ def main():
         st.markdown("Extracts and verifies every URL indexed across your entire site structure.")
         sitemap_input = st.text_input("Enter Sitemap URL Pathway:", placeholder="https://example.com", key="sitemap_input")
 
+       
         if st.button("Extract & Validate Sitemap Matrix", key="sitemap_btn"):
+
             if sitemap_input:
-                with st.spinner("Parsing nested XML sitemap directories..."):
+
+                with st.spinner("Parsing XML sitemap..."):
                     sitemap_urls = get_sitemap_urls(sitemap_input)
 
                 if sitemap_urls:
-                    st.success(f"Discovered {len(sitemap_urls)} total production paths inside sitemap registry architecture!")
+
+                    st.success(
+                        f"Discovered {len(sitemap_urls)} URLs in sitemap!"
+                    )
+
+                    all_anchor_records = []
+
+                    progress = st.progress(0)
+                    status = st.empty()
+
+                    # Extract anchor text from sitemap pages
+                    for index, page_url in enumerate(sitemap_urls):
+
+                        page_links = get_page_links_for_report(page_url)
+
+                        all_anchor_records.extend(page_links)
+
+                        progress.progress(
+                            (index + 1) / len(sitemap_urls)
+                        )
+
+                        status.text(
+                            f"Extracting anchor text: {index + 1}/{len(sitemap_urls)}"
+                        )
+
+                    progress.empty()
+                    status.empty()
+
+                    # Check sitemap URLs
                     sitemap_results_df = bulk_check_urls(sitemap_urls)
-                    display_results(sitemap_results_df, "full_sitemap_seo_report.csv")
+
+                    # Combine anchor text with URL status
+                    if all_anchor_records:
+
+                        anchor_df = pd.DataFrame(all_anchor_records)
+
+                        final_df = anchor_df.merge(
+                            sitemap_results_df,
+                            on="URL",
+                            how="left"
+                        )
+
+                    else:
+
+                        final_df = sitemap_results_df
+
+                        st.warning(
+                            "No HTML anchor links were extracted."
+                        )
+
+                    display_results(
+                        final_df,
+                        "full_sitemap_seo_report.csv"
+                    )
+
                 else:
-                    st.warning("Crawl complete: Zero operational address URLs discovered inside target block.")
+
+                    st.warning("No URLs discovered in sitemap.")
+
             else:
-                st.error("Missing Parameter: Please provide a valid XML sitemap index link.")
+
+                st.error("Please provide a sitemap URL.")
+
 
     with tab3:
         st.subheader("Upload Custom Execution Sheet Matrix")
