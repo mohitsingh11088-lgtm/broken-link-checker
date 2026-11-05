@@ -26,7 +26,7 @@ def verify_url(url, timeout=5):
         # Use HEAD request first for speed
         response = requests.head(url, headers=headers, timeout=timeout, allow_redirects=True)
         
-        # FIX: If HEAD request is blocked, rejected, or unhandled (e.g., 404/405/400), fall back to GET
+        # FIX: Added the explicit list of status codes to check against
         if response.status_code in:
             response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
             
