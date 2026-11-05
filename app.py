@@ -6,7 +6,7 @@ from urllib.parse import urlparse, urljoin, urldefrag
 import concurrent.futures
 import ipaddress
 import socket
-
+import xml.etree.ElementTree as ET
 # ==========================================
 # PAGE CONFIGURATION
 # ==========================================
